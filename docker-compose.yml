@@ -1,0 +1,198 @@
+services:
+  wolfssl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: clone
+      ssh: ["default"]
+    environment:
+      - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
+    volumes:
+      - ./libs-created:/usr/local
+      - type: bind
+        source: $SSH_AUTH_SOCK
+        target: $SSH_AUTH_SOCK
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/local/lib/libwolfssl.so"]
+      interval: 5s
+      retries: 20
+      start_period: 5s
+      timeout: 10s
+    command: |
+      bash -c '
+        SECONDS=0
+        echo "Starting wolfssl build" && echo $SSH_AUTH_SOCK &&
+        ssh-add -l &&
+        if [ ! -f /usr/local/lib/libwolfssl.so ]; then
+          cmake .. -GNinja -DCMAKE_BUILD_TYPE=Release && 
+          ninja install &&
+          touch /tmp/build_complete
+        fi
+        while [ ! -f /tmp/build_complete ]; do 
+          if [ -f /usr/local/lib/libwolfssl.so ]; then
+            touch /tmp/build_complete
+          fi
+          if [ "$SECONDS" -gt 30 ]; then
+            echo "Timeout waiting for libraries"
+            exit 1
+          fi
+          sleep 1
+        done
+
+        echo "Wolfssl build complete"
+        exit 0
+      '
+
+  asl:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: clone
+      ssh: ["default"]
+    environment:
+      - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
+    volumes:
+      - ./libs-created:/usr/local
+      - type: bind
+        source: $SSH_AUTH_SOCK
+        target: $SSH_AUTH_SOCK
+    healthcheck:
+      test: ["CMD", "test", "-f", "/usr/local/lib/libkritis3m_asl.so"]
+      interval: 5s
+      retries: 20
+      start_period: 5s
+      timeout: 10s
+    depends_on:
+      wolfssl:
+        condition: service_completed_successfully
+    command: |
+      bash -c '
+        SECONDS=0
+        if [ ! -f /usr/local/lib/libkritis3m_asl.so ]; then
+          cmake .. \ 
+          -GNinja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DKRITIS3M_ASL_EXTERNAL_WOLFSSL=ON \
+          -DKRITIS3M_ASL_INTERNAL_API=ON &&
+          ninja install &&
+          touch /tmp/build_complete
+        fi
+        while [ ! -f /tmp/build_complete ]; do 
+          if [ -f /usr/local/lib/libkritis3m_asl.so ]; then
+            touch /tmp/build_complete
+          fi
+          if [ "$SECONDS" -gt 30 ]; then
+            echo "Timeout waiting for libraries"
+            exit 1
+          fi
+          sleep 1
+        done
+
+        echo "ASL build complete"
+        exit 0
+      '
+
+  pki:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: clone
+      ssh: ["default"]
+    environment:
+      - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
+    volumes:
+      - ./libs-created:/usr/local
+      - type: bind
+        source: $SSH_AUTH_SOCK
+        target: $SSH_AUTH_SOCK
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "bash",
+          "-c",
+          "test -f /usr/local/lib/libkritis3m_pki_server.so && test -f /usr/local/lib/libkritis3m_pki_client.so && test -f /usr/local/lib/libkritis3m_pki_common.so"
+        ]
+      interval: 5s
+      retries: 20
+      start_period: 5s
+      timeout: 10s
+    depends_on:
+      wolfssl:
+        condition: service_completed_successfully
+    command: |
+      bash -c '
+        SECONDS=0
+        if [ ! -f /usr/local/lib/libkritis3m_pki_server.so ] || \
+        [ ! -f /usr/local/lib/libkritis3m_pki_client.so ] || \
+        [ ! -f /usr/local/lib/libkritis3m_pki_common.so ]; then
+          cmake .. -GNinja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DKRITIS3M_PKI_EXTERNAL_WOLFSSL=ON \
+          -DKRITIS3M_PKI_LIBRARY_ONLY=ON &&
+          ninja install &&
+          touch /tmp/build_complete
+        fi
+        while [ ! -f /tmp/build_complete ]; do 
+          if [ -f /usr/local/lib/libkritis3m_pki_server.so ] && \
+          [ -f /usr/local/lib/libkritis3m_pki_client.so ] && \
+          [ -f /usr/local/lib/libkritis3m_pki_common.so ]; then
+            touch /tmp/build_complete
+          fi
+          if [ "$SECONDS" -gt 30 ]; then
+            echo "Timeout waiting for libraries"
+            exit 1
+          fi
+          sleep 1
+        done
+
+        echo "PKI build complete"
+        exit 0
+      '
+
+  create-libs:
+    image: alpine:latest
+    volumes:
+      - ./libs-created:/usr/local
+    depends_on:
+      wolfssl:
+        condition: service_completed_successfully
+      asl:
+        condition: service_completed_successfully
+      pki:
+        condition: service_completed_successfully
+    command: |
+      sh -c '
+        export SECONDS=0; \
+        while [ ! -f /usr/local/lib/libwolfssl.so ] || \
+              [ ! -f /usr/local/lib/libkritis3m_asl.so ] || \
+              [ ! -f /usr/local/lib/libkritis3m_pki_server.so ] || \
+              [ ! -f /usr/local/lib/libkritis3m_pki_client.so ] || \
+              [ ! -f /usr/local/lib/libkritis3m_pki_common.so ]; do
+            sleep 1
+            if [ "$SECONDS" -gt 30 ]; then
+              echo "Timeout waiting for libraries"
+              exit 1
+            fi
+        done
+        echo "All libraries are present"
+        chown -R 1000:1000 /usr/local
+        chmod -R 755 /usr/local
+        ls -l /usr/local/lib
+        exit 0
+      '
+
+  go-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    volumes:
+      - ./libs-created:/usr/local
+    depends_on:
+      wolfssl:
+        condition: service_completed_successfully
+      asl:
+        condition: service_completed_successfully
+      pki:
+        condition: service_completed_successfully
