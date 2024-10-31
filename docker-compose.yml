@@ -4,6 +4,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: clone
+      args:
+        REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
+        REPO_NAME: ${REPO_NAME_WOLFSSL}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
@@ -48,6 +51,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: clone
+      args:
+        REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
+        REPO_NAME: ${REPO_NAME_ASL}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
@@ -96,6 +102,9 @@ services:
       context: .
       dockerfile: Dockerfile
       target: clone
+      args:
+        REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
+        REPO_NAME: ${REPO_NAME_PKI}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
@@ -162,7 +171,7 @@ services:
         condition: service_completed_successfully
     command: |
       sh -c '
-        export SECONDS=0; \
+        SECONDS=0
         while [ ! -f /usr/local/lib/libwolfssl.so ] || \
               [ ! -f /usr/local/lib/libkritis3m_asl.so ] || \
               [ ! -f /usr/local/lib/libkritis3m_pki_server.so ] || \
