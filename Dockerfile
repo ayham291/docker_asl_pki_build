@@ -33,7 +33,7 @@ RUN --mount=type=ssh git clone ${REPO_SSH_LOCATION}/${REPO_NAME}.git /opt/${REPO
 WORKDIR /opt/${REPO_NAME}
 
 # Pin the repository to a specific commit
-RUN git checkout ${REPO_COMMIT:-HEAD}
+RUN git checkout ${REPO_COMMIT}
 
 RUN mkdir build
 

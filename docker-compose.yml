@@ -7,6 +7,7 @@ services:
       args:
         REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
         REPO_NAME: ${REPO_NAME_WOLFSSL}
+        REPO_COMMIT: ${REPO_COMMIT_WOLFSSL}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
@@ -54,6 +55,7 @@ services:
       args:
         REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
         REPO_NAME: ${REPO_NAME_ASL}
+        REPO_COMMIT: ${REPO_COMMIT_ASL}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
@@ -105,6 +107,7 @@ services:
       args:
         REPO_SSH_LOCATION: ${REPO_SSH_LOCATION}
         REPO_NAME: ${REPO_NAME_PKI}
+        REPO_COMMIT: ${REPO_COMMIT_PKI}
       ssh: ["default"]
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
