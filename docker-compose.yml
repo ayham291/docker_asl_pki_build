@@ -193,13 +193,24 @@ services:
         exit 0
       '
 
-  go-app:
+  estserver:
     build:
       context: .
       dockerfile: Dockerfile
       target: runtime
+      ssh: ["default"]
+    environment:
+      - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
+    ports:
+      - 8443:8443
     volumes:
+      - ./go:/go
       - ./libs-created:/usr/local
+      - ./config.json:/config.json
+      - ./db.sqlite:/db.sqlite
+      - type: bind
+        source: $SSH_AUTH_SOCK
+        target: $SSH_AUTH_SOCK
     depends_on:
       wolfssl:
         condition: service_completed_successfully
@@ -207,3 +218,61 @@ services:
         condition: service_completed_successfully
       pki:
         condition: service_completed_successfully
+    command: |
+      bash -c '
+        set -e
+        mkdir -p /root/.ssh
+        chmod 0700 /root/.ssh
+        ssh-keyscan github.com > /root/.ssh/known_hosts
+        git clone git@github.com:Laboratory-for-Safe-and-Secure-Systems/kritis3m_workspace.git /c
+
+        ldconfig
+
+        GOPROXY=direct go install github.com/Laboratory-for-Safe-and-Secure-Systems/est/cmd/estserver@latest && \
+        echo "EST server binary created"
+        export PATH=$$PATH:/root/go/bin
+
+        estserver --version
+        sleep 15
+        echo "Starting EST server"
+        estserver --config /x.json
+      '
+
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+      ssh: ["default"]
+    environment:
+      - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
+    ports:
+      - 8080:8080
+    volumes:
+      - ./go:/go
+      - ./libs-created:/usr/local
+      - ./db.sqlite:/db.sqlite
+      - type: bind
+        source: $SSH_AUTH_SOCK
+        target: $SSH_AUTH_SOCK
+    command: |
+      bash -c '
+        set -e
+        mkdir -p /root/.ssh
+        chmod 0700 /root/.ssh
+        ssh-keyscan github.com > /root/.ssh/known_hosts
+
+        ldconfig
+
+        GOPROXY=direct go install github.com/Laboratory-for-Safe-and-Secure-Systems/est/ui@latest && \
+        echo "UI binary created"
+        export PATH=$$PATH:/root/go/bin
+
+        ui --version
+        '
+
+
+volumes:
+  wolfsslbuild:
+  aslbuild:
+  pkibuild:

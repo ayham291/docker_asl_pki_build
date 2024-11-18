@@ -44,6 +44,9 @@ FROM debian:bookworm-slim AS runtime
 
 # Install runtime dependencies
 RUN apt-get update && apt-get install -y \
+  git \
+  ca-certificates \
+  openssh-client \
   golang \
   && rm -rf /var/lib/apt/lists/*
 
