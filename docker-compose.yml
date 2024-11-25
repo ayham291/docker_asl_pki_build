@@ -194,20 +194,16 @@ services:
       '
 
   estserver:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-      ssh: ["default"]
+    image: ghcr.io/ayham291/est:latest
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
     ports:
       - 8443:8443
     volumes:
-      - ./go:/go
-      - ./libs-created:/usr/local
       - ./config.json:/config.json
-      - ./db.sqlite:/db.sqlite
+      - ./test.db-shm:/test.db-shm
+      - ./test.db-wal:/test.db-wal
+      - ./test.sqlite:/test.db
       - type: bind
         source: $SSH_AUTH_SOCK
         target: $SSH_AUTH_SOCK
@@ -218,58 +214,22 @@ services:
         condition: service_completed_successfully
       pki:
         condition: service_completed_successfully
-    command: |
-      bash -c '
-        set -e
-        mkdir -p /root/.ssh
-        chmod 0700 /root/.ssh
-        ssh-keyscan github.com > /root/.ssh/known_hosts
-        git clone git@github.com:Laboratory-for-Safe-and-Secure-Systems/kritis3m_workspace.git /c
-
-        ldconfig
-
-        GOPROXY=direct go install github.com/Laboratory-for-Safe-and-Secure-Systems/est/cmd/estserver@latest && \
-        echo "EST server binary created"
-        export PATH=$$PATH:/root/go/bin
-
-        estserver --version
-        sleep 15
-        echo "Starting EST server"
-        estserver --config /x.json
-      '
+    command: 'estserver --config /config.json'
 
   ui:
-    build:
-      context: .
-      dockerfile: Dockerfile
-      target: runtime
-      ssh: ["default"]
+    image: ghcr.io/ayham291/ui:latest
     environment:
       - SSH_AUTH_SOCK=$SSH_AUTH_SOCK
     ports:
       - 8080:8080
     volumes:
-      - ./go:/go
-      - ./libs-created:/usr/local
-      - ./db.sqlite:/db.sqlite
+      - ./test.db-shm:/test.db-shm
+      - ./test.db-wal:/test.db-wal
+      - ./test.sqlite:/test.db
       - type: bind
         source: $SSH_AUTH_SOCK
         target: $SSH_AUTH_SOCK
-    command: |
-      bash -c '
-        set -e
-        mkdir -p /root/.ssh
-        chmod 0700 /root/.ssh
-        ssh-keyscan github.com > /root/.ssh/known_hosts
-
-        ldconfig
-
-        GOPROXY=direct go install github.com/Laboratory-for-Safe-and-Secure-Systems/est/ui@latest && \
-        echo "UI binary created"
-        export PATH=$$PATH:/root/go/bin
-
-        ui --version
-        '
+    command: 'ui'
 
 
 volumes:
