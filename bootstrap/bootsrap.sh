@@ -36,7 +36,7 @@ while true; do
   case "$1" in
     -s|--server)
       SERVER="$2"
-      if ! nc -z "$SERVER" 8443 > /dev/null 2>&1; then
+      if ! timeout 1 bash -c "echo > /dev/null 2>&1 < /dev/tcp/$SERVER/8443"; then
         echo "$SERVER is not reachable on port 8443"
         exit 1
       fi
