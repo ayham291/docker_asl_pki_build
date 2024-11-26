@@ -3,10 +3,17 @@
 set -e
 
 # Default variables
+# Check platform arm or x86
+if [ "$(uname -m)" = "aarch64" ]; then
+  echo "ARM platform detected"
+  IMAGE="ghcr.io/laboratory-for-safe-and-secure-systems/estclient:arm"
+else
+  echo "x86 platform detected"
+  IMAGE="ghcr.io/laboratory-for-safe-and-secure-systems/estclient:latest"
+fi
 SERVER=""
 BASE_CERT_PATH="/c/certificates"
 CERT_PATH="$BASE_CERT_PATH/pure_chains_existing_keys/secp384" # Path on the container
-IMAGE="ghcr.io/laboratory-for-safe-and-secure-systems/estclient:latest"
 OUTPUT_DIR=$(mktemp -d)
 trap 'rm -rf "$OUTPUT_DIR"' EXIT
 
