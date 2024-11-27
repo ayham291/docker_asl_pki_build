@@ -20,8 +20,29 @@ trap 'rm -rf "$OUTPUT_DIR"' EXIT
 # Function to display usage
 usage() {
   echo "Usage: $0 --server <server> [--cert-path <path>] [--image <image>]"
+  echo "       $0 --extract-client <path>"
+  echo "  --server, -s <server>    EST server address"
+  echo "  --cert-path, -c <path>   Path to the certificates in the container"
+  echo "  --image, -i <image>      Docker image to use"
+  echo "  --output-dir, -o <path>  Output directory for the client certificate"
+  echo "  --extract-client, -e     Extract the estclient binary from the image"
+  echo "  --help, -h               Display this help message"
   exit 1
 }
+
+for arg in "$@"; do
+  if [ "$arg" = "--extract-client" ] || [ "$arg" = "-e" ]; then
+    shift
+    if [ -z "$1" ]; then
+      echo "Error: --extract-client requires a path argument."
+      exit 1
+    fi
+    OUTPUT_CLIENT="$1"
+    echo "Extracting estclient to $OUTPUT_CLIENT"
+    docker run --rm -v "$OUTPUT_CLIENT":/output "$IMAGE" bash -c "cp \$(which estclient) /output && chmod +x /output/estclient && chown $(id -u):$(id -g) /output/estclient"
+    exit 0
+  fi
+done
 
 # Parse options
 OPTIONS=$(getopt -o s:c:i:o:h --long server:,cert-path:,image:,output:,help -- "$@")
@@ -46,11 +67,10 @@ while true; do
       CERT_PATH="$BASE_CERT_PATH/$2"
       # Check if this folder exists in the container
       echo "$CERT_PATH"
-      if ! docker run --rm -v "$(mktemp -d):$CERT_PATH" "$IMAGE" bash -c "[ -d $CERT_PATH ]"; then
+      if ! docker run --rm "$IMAGE" bash -c "[ -d $CERT_PATH ]"; then
         echo "Error: $CERT_PATH does not exist in the container"
         exit 1
       fi
-
       shift 2
       ;;
     -i|--image)
@@ -59,13 +79,11 @@ while true; do
       ;;
     -o|--output-dir)
       OUTPUT_DIR="$2"
-      
       if [ ! -d "$OUTPUT_DIR" ]; then
         echo "Error: $OUTPUT_DIR does not exist"
         exit 1
       fi
       trap - EXIT
-
       shift 2
       ;;
     -h|--help)
