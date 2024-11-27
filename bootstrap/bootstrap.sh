@@ -12,8 +12,10 @@ else
   IMAGE="ghcr.io/laboratory-for-safe-and-secure-systems/estclient:latest"
 fi
 SERVER=""
+CLIENT="docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient"
 BASE_CERT_PATH="/c/certificates"
-CERT_PATH="$BASE_CERT_PATH/pure_chains_existing_keys/secp384" # Path on the container
+CERT_TYPE="pure_chains_existing_keys/secp384"
+CERT_PATH="$BASE_CERT_PATH/$CERT_TYPE" # Path on the container
 OUTPUT_DIR=$(mktemp -d)
 trap 'rm -rf "$OUTPUT_DIR"' EXIT
 
@@ -21,12 +23,17 @@ trap 'rm -rf "$OUTPUT_DIR"' EXIT
 usage() {
   echo "Usage: $0 --server <server> [--cert-path <path>] [--image <image>]"
   echo "       $0 --extract-client <path>"
+  echo "       $0 --server <server> --client <client> --cert-path <path> [--output-dir <path>]"
   echo "  --server, -s <server>    EST server address"
-  echo "  --cert-path, -c <path>   Path to the certificates in the container"
+  echo "  --client, -c <client>    EST client command | if specified, then define --cert-path"
+  echo "  --cert-path              Path to the certificates base directory"
   echo "  --image, -i <image>      Docker image to use"
   echo "  --output-dir, -o <path>  Output directory for the client certificate"
   echo "  --extract-client, -e     Extract the estclient binary from the image"
   echo "  --help, -h               Display this help message"
+  echo "Using estclient on its own like:"
+  echo "      estclient csr -key <key> -cn <cn> -country <country> -org <org> -ou <ou> -emails <emails> -dnsnames <dnsnames> -ips <ips> -out <out>"
+  echo "      estclient reenroll -server <server> -explicit <explicit> -certs <certs> -key <key> -csr <csr> -out <out>"
   exit 1
 }
 
@@ -45,7 +52,7 @@ for arg in "$@"; do
 done
 
 # Parse options
-OPTIONS=$(getopt -o s:c:i:o:h --long server:,cert-path:,image:,output:,help -- "$@")
+OPTIONS=$(getopt -o s:c:i:o:h --long server:,cert-path:,client:,image:,output:,help -- "$@")
 if ! eval set -- "$OPTIONS"; then
   usage
 fi
@@ -63,14 +70,33 @@ while true; do
       fi
       shift 2
       ;;
-    -c|--cert-path)
-      CERT_PATH="$BASE_CERT_PATH/$2"
-      # Check if this folder exists in the container
-      echo "$CERT_PATH"
-      if ! docker run --rm "$IMAGE" bash -c "[ -d $CERT_PATH ]"; then
-        echo "Error: $CERT_PATH does not exist in the container"
+    -c|--client)
+      CLIENT=$(pwd)/$2
+      
+      if [ ! -f "$CLIENT" ]; then
+        echo "Error: $CLIENT does not exist"
         exit 1
       fi
+
+      shift 2
+      ;;
+    --cert-path)
+      CERT_PATH="$BASE_CERT_PATH/$2"
+      # Check if this folder exists in the container
+      if [ "$CLIENT" = "docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient" ]; then
+        echo "Checking if $CERT_PATH exists in the container..."
+        if ! docker run --rm "$IMAGE" bash -c "[ -d $CERT_PATH ]"; then
+          echo "Error: $CERT_PATH does not exist in the container"
+          exit 1
+        fi
+      else
+        CERT_PATH=$2
+        if [ ! -d "$CERT_PATH" ]; then
+          echo "Error: $CERT_PATH does not exist"
+          exit 1
+        fi
+      fi
+      echo "$CERT_PATH"
       shift 2
       ;;
     -i|--image)
@@ -111,9 +137,18 @@ get_client() {
   docker pull "$IMAGE"
 }
 
+if [ "$CLIENT" = "docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient" ]; then
+  out_arg="/output"
+else
+  out_arg="$OUTPUT_DIR"
+  trap - EXIT
+fi
+
+
 csr() {
   echo "Generating CSR..."
-  docker run --rm -v "$OUTPUT_DIR":/output "$IMAGE" estclient \
+ 
+  $CLIENT \
     csr \
     -key "$CERT_PATH/client/privateKey.pem" \
     -cn 'KRITIS3M Client' \
@@ -122,8 +157,8 @@ csr() {
     -ou "LaS3" \
     -emails 'kritis3m@oth-regensburg.de' \
     -dnsnames "localhost" \
-    -out /output/client.csr \
-    -ips 127.0.0.1
+    -ips 127.0.0.1 \
+    -out "$out_arg/client.csr"
 
   if [ ! -f "$OUTPUT_DIR/client.csr" ]; then
     echo "CSR generation failed"
@@ -138,14 +173,14 @@ reenroll() {
     exit 1
   fi
   echo "Reenrolling... Connecting to $SERVER:8443"
-  docker run --rm --network host -v "$OUTPUT_DIR":/output "$IMAGE" estclient \
+  $CLIENT \
     reenroll \
     -server "$SERVER:8443" \
     -explicit "$CERT_PATH/root/cert.pem" \
     -certs "$CERT_PATH/client/cert.pem" \
     -key "$CERT_PATH/client/privateKey.pem" \
-    -csr /output/client.csr \
-    -out /output/client.crt
+    -csr "$out_arg/client.csr" \
+    -out "$out_arg/client.crt"
 
   if [ ! -f "$OUTPUT_DIR/client.crt" ]; then
     echo "Reenrollment failed"
@@ -155,7 +190,9 @@ reenroll() {
 }
 
 echo "Starting script..."
-get_client
+if [ "$CLIENT" = "docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient" ]; then
+  get_client
+fi
 csr
 reenroll
 echo "Script completed successfully!"
