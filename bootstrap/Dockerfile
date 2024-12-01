@@ -35,7 +35,7 @@ RUN --mount=type=bind,source=./libs-created/lib,target=/usr/local/lib \
   --mount=type=bind,source=./libs-created/share,target=/usr/local/share \
   --mount=type=cache,target=/root/.cache/go-build \
   ldconfig && \
-  go install ${REPO_NAME}
+  GOPROXY=direct go install ${REPO_NAME}
 
 CMD ["bash"]
 
