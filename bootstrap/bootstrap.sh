@@ -13,12 +13,15 @@ else
   IMAGE="ghcr.io/laboratory-for-safe-and-secure-systems/estclient:latest"
   CLIENT_URL="https://github.com/Laboratory-for-Safe-and-Secure-Systems/est/releases/download/v1.0.0/estclient-x86-64"
 fi
+SCRIPT_DIR=$(dirname "$0")
 SERVER=""
 CLIENT="docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient"
 BASE_CERT_PATH="/c/certificates"
-CERT_TYPE="pure_chains_existing_keys/secp384"
+CERT_ALGO="secp384"
+CERT_TYPE="pure_chains_existing_keys/$CERT_ALGO"
 CERT_PATH="$BASE_CERT_PATH/$CERT_TYPE/client" # Path on the container
 ROOT_CERT_PATH="$BASE_CERT_PATH/$CERT_TYPE/root" # Path on the container
+PRIVATE_KEY="privateKey.pem"
 OUTPUT_DIR=$(mktemp -d)
 trap 'rm -rf "$OUTPUT_DIR"' EXIT
 
@@ -60,7 +63,7 @@ for arg in "$@"; do
 done
 
 # Parse options
-OPTIONS=$(getopt -o s:c:i:o:h --long server:,cert-path:,root:,client:,image:,output:,help -- "$@")
+OPTIONS=$(getopt -o s:c:i:o:qh --long server:,cert-path:,common-name:,root:,client:,image:,output:,pqc,help -- "$@")
 if ! eval set -- "$OPTIONS"; then
   usage
 fi
@@ -80,12 +83,10 @@ while true; do
       ;;
     -c|--client)
       CLIENT=$(pwd)/$2
-      
-      if [ -z "$CERT_PATH" ]; then
-        echo "Error: --cert-path is required if --client is specified"
-        exit 1
-      fi
-
+      shift 2
+      ;;
+    --common-name)
+      COMMON_NAME_EXT="$2"
       shift 2
       ;;
     --cert-path)
@@ -98,7 +99,7 @@ while true; do
         fi
       else
         CERT_PATH=$2
-        if [ ! -d "$CERT_PATH" ] || [ ! -f "$CERT_PATH/cert.pem" ] || [ ! -f "$CERT_PATH/privateKey.pem" ]; then
+        if [ ! -d "$CERT_PATH" ] || [ ! -f "$CERT_PATH/privateKey.pem" ]; then
           echo "Error: $CERT_PATH does not exist or is missing cert.pem or privateKey.pem"
           exit 1
         fi
@@ -136,6 +137,10 @@ while true; do
       fi
       trap - EXIT
       shift 2
+      ;;
+    -q|--pqc)
+      PRIVATE_KEY="privateKey-pqc.pem"
+      shift
       ;;
     -h|--help)
       usage
@@ -192,44 +197,70 @@ else
   trap - EXIT
 fi
 
-get_root_cert() {
-  echo "Getting root certificate..."
-  ROOT_CERT="$out_arg/ca.pem"
-  $CLIENT \
-    cacerts \
-    -server "$SERVER:8443" \
-    -explicit "$ROOT_CERT_PATH/cert.pem" \
-    -certs "$CERT_PATH/chain.pem" \
-    -key "$CERT_PATH/privateKey.pem" \
-    -out "$ROOT_CERT"
+CERT="$out_arg/cert.pem"
+INITIAL_CERT="$SCRIPT_DIR"/cert/cert"$COMMON_NAME_EXT".pem
 
-  if [ ! -f "$ROOT_CERT" ]; then
-    echo "Failed to get root certificate"
+if [ -z "$ROOT_CERT_PATH" ]; then
+  ROOT_CERT_PATH="$SCRIPT_DIR"/cert/intemediate/"$CERT_ALGO"
+fi
+if [ -z "$CERT_PATH" ]; then
+  CERT_PATH="$SCRIPT_DIR/cert"
+  if [ ! -d "$CERT_PATH" ]; then
+    echo "Error: $CERT_PATH does not exist"
     exit 1
   fi
-  echo "Root certificate created at $ROOT_CERT"
-}
+fi
 
 csr() {
+  if [ -z "$COMMON_NAME_EXT" ]; then
+    COMMON_NAME="KRITIS3M Client"
+  else
+    COMMON_NAME="KRITIS3M Client - $COMMON_NAME_EXT"
+  fi
   echo "Generating CSR..."
-  CSR_PATH="$out_arg/client-$(date +%s).csr"
-  $CLIENT \
-    csr \
-    -key "$CERT_PATH/privateKey.pem" \
-    -cn 'KRITIS3M Client' \
-    -country "DE" \
-    -org "OTH Regensburg" \
-    -ou "LaS3" \
-    -emails 'kritis3m@oth-regensburg.de' \
-    -dnsnames "localhost" \
-    -ips 127.0.0.1 \
-    -out "$CSR_PATH"
+  if [ $PRIVATE_KEY = "privateKey-pqc.pem" ]; then
+    CSR_PATH="$out_arg/client-pqc$COMMON_NAME_EXT.csr"
+  else
+    CSR_PATH="$out_arg/client$COMMON_NAME_EXT.csr"
+  fi
+
+  if [ ! -f "$CSR_PATH" ]; then
+    kritis3m_pki --entity_key "$SCRIPT_DIR"/cert/"$PRIVATE_KEY" \
+      --issuer_key "$SCRIPT_DIR"/cert/"$PRIVATE_KEY" \
+      --csr_out "$CSR_PATH" \
+      --validity 365 \
+      --common_name "$COMMON_NAME" \
+      --org "OTH Regensburg" \
+      --unit "LaS3" \
+      --alt_names_DNS "localhost" \
+      --alt_names_IP "127.0.0.1"
+
+  echo "CSR created at $CSR_PATH"
+  fi
 
   if [ ! -f "$CSR_PATH" ]; then
     echo "CSR generation failed"
     exit 1
   fi
-  echo "CSR created at $CSR_PATH"
+
+  echo "Creating client certificate..."
+  if [ ! -f "$INITIAL_CERT" ]; then
+    # DONT GENERATE PQC CERTIFICATE
+    # cannot use it to connect to the server for reenrollment
+    kritis3m_pki \
+      --entity_key "$SCRIPT_DIR"/cert/privateKey.pem \
+      --issuer_key "$ROOT_CERT_PATH"/privateKey.pem \
+      --issuer_cert "$ROOT_CERT_PATH"/cert.pem \
+      --cert_out "$INITIAL_CERT" \
+      --csr_in "$CSR_PATH"
+
+    echo "KRIITS3M Client certificate created at $INITIAL_CERT"
+  fi
+
+  if [ ! -f "$INITIAL_CERT" ]; then
+    echo "Certificate generation failed"
+    exit 1
+  fi
 }
 
 reenroll() {
@@ -238,12 +269,11 @@ reenroll() {
     exit 1
   fi
   echo "Reenrolling... Connecting to $SERVER:8443"
-  CERT="$out_arg/cert.pem"
   $CLIENT \
     reenroll \
     -server "$SERVER:8443" \
-    -explicit "$ROOT_CERT" \
-    -certs "$CERT_PATH/chain.pem" \
+    -explicit "$ROOT_CERT_PATH/cert.pem" \
+    -certs "$CERT_PATH/cert$COMMON_NAME_EXT.pem" \
     -key "$CERT_PATH/privateKey.pem" \
     -csr "$CSR_PATH" \
     -out "$CERT"
@@ -253,13 +283,12 @@ reenroll() {
     exit 1
   fi
 
-  cat "$CERT" "$ROOT_CERT" > "$out_arg/chain.pem"
-  echo "Certificate created at $CERT"
+  cat "$CERT_PATH/cert$COMMON_NAME_EXT.pem" "$ROOT_CERT_PATH/cert.pem" > "$out_arg/chain.pem"
+  echo "Certificate reenrolled at $out_arg/chain.pem"
 }
 
 echo "Starting script..."
 get_client
-get_root_cert
 csr
 reenroll
 echo "Script completed successfully!"
