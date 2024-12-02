@@ -43,7 +43,7 @@ docker run -d \
   -v "$PWD"/node_db.sqlite-shm:/db.sqlite-shm \
   -v "$PWD"/node_db.sqlite-wal:/db.sqlite-wal \
   -v "$PWD"/certs/privateKey.pem:/certs/privateKey.pem \
-  -v "$PWD"/certs/kritis3m_scale/cert.pem:/certs/chain.pem \
+  -v "$PWD"/certs/kritis3m_scale/chain.pem:/certs/chain.pem \
   $IMAGE_SCALE \
   bash -c "cp /c/certificates/pure_chains_existing_keys/secp384/root/cert.pem /certs/cert.pem && kritis3m_scale --config /config.yaml import && kritis3m_scale --config /config.yaml start"
 
@@ -61,7 +61,7 @@ docker run -d \
   -v "$PWD"/est_db.sqlite-shm:/test.db-shm \
   -v "$PWD"/est_db.sqlite-wal:/test.db-wal \
   -v "$PWD"/certs/privateKey.pem:/certs/privateKey.pem \
-  -v "$PWD"/certs/kritis3m_est/cert.pem:/certs/chain.pem \
+  -v "$PWD"/certs/kritis3m_est/chain.pem:/certs/chain.pem \
   $IMAGE_EST \
   bash -c "estserver --config /config.json"
 
