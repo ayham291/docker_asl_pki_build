@@ -15,6 +15,7 @@ else
 fi
 SCRIPT_DIR=$(dirname "$0")
 SERVER=""
+CURL=false
 CLIENT="docker run --rm --network host -v $OUTPUT_DIR:/output $IMAGE estclient"
 BASE_CERT_PATH="/c/certificates"
 CERT_ALGO="secp384"
@@ -83,6 +84,9 @@ while true; do
       ;;
     -c|--client)
       CLIENT=$(pwd)/$2
+      if [ "$CLIENT" = "curl" ]; then
+        CURL=true
+      fi
       shift 2
       ;;
     --common-name)
@@ -269,17 +273,28 @@ reenroll() {
     exit 1
   fi
   echo "Reenrolling... Connecting to $SERVER:8443"
-  $CLIENT \
-    reenroll \
-    -server "$SERVER:8443" \
-    -explicit "$ROOT_CERT_PATH/cert.pem" \
-    -certs "$CERT_PATH/cert$COMMON_NAME_EXT.pem" \
-    -key "$CERT_PATH/privateKey.pem" \
-    -csr "$CSR_PATH" \
-    -out "$CERT"
+  if ! $CURL; then
+    $CLIENT \
+      reenroll \
+      -server "$SERVER:8443" \
+      -explicit "$ROOT_CERT_PATH/cert.pem" \
+      -certs "$CERT_PATH/cert$COMMON_NAME_EXT.pem" \
+      -key "$CERT_PATH/privateKey.pem" \
+      -csr "$CSR_PATH" \
+      -out "$CERT"
 
-  if [ ! -f "$CERT" ]; then
-    echo "Reenrollment failed"
+  elif command -v curl > /dev/null; then
+    echo "Using curl to reenroll the certificate..."
+    echo "$CURL"
+    curl -X POST "https://$SERVER:8443/.well-known/est/simplreenroll" \
+      --cacert "$ROOT_CERT_PATH/cert.pem" \
+      --cert "$CERT_PATH/cert$COMMON_NAME_EXT.pem" \
+      --key "$CERT_PATH/privateKey.pem" \
+      --data-binary "@$CSR_PATH" \
+      --output "$CERT"
+
+  else
+    echo "Error: curl is required to reenroll the certificate"
     exit 1
   fi
 
