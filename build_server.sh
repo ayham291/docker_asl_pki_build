@@ -27,6 +27,8 @@ startup() {
     fi
   fi
 
+docker network create kritis3m
+
 # Run Kritis3m Scale
 # touch node_db.sqlite
 touch node_db.sqlite-shm
@@ -44,6 +46,7 @@ docker run -d \
   -v "$PWD"/node_db.sqlite-wal:/db.sqlite-wal \
   -v "$PWD"/certs/privateKey.pem:/certs/privateKey.pem \
   -v "$PWD"/certs/kritis3m_scale/chain.pem:/certs/chain.pem \
+  --network kritis3m \
   $IMAGE_SCALE \
   bash -c "cp /c/certificates/pure_chains_existing_keys/secp384/root/cert.pem /certs/cert.pem && kritis3m_scale --config /config.yaml import && kritis3m_scale --config /config.yaml start"
 
@@ -62,6 +65,7 @@ docker run -d \
   -v "$PWD"/est_db.sqlite-wal:/test.db-wal \
   -v "$PWD"/certs/privateKey.pem:/certs/privateKey.pem \
   -v "$PWD"/certs/kritis3m_est/chain.pem:/certs/chain.pem \
+  --network kritis3m \
   $IMAGE_EST \
   bash -c "estserver --config /config.json"
 
@@ -76,6 +80,7 @@ docker run -d \
   -v "$PWD"/node_db.sqlite:/node_db.sqlite \
   -v "$PWD"/node_db.sqlite-shm:/node_db.sqlite-shm \
   -v "$PWD"/node_db.sqlite-wal:/node_db.sqlite-wal \
+  --network kritis3m \
   $IMAGE_UI \
   bash -c "ui -certDB /est_db.sqlite -nodesDB /node_db.sqlite"
 }
@@ -85,6 +90,7 @@ down_containers() {
   rm -f node_db.sqlite-shm node_db.sqlite-wal est_db.sqlite-shm est_db.sqlite-wal
   docker stop kritis3m_scale estserver ui
   docker rm kritis3m_scale estserver ui
+  docker network rm kritis3m
 }
 
 args=("$@")
