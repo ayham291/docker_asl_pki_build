@@ -52,11 +52,21 @@ COPY --from=build /go/bin/${APP_NAME%@*} /usr/local/bin/${APP_NAME%@*}
 
 COPY --from=build /c /c
 
+# Make sure date and time are correct
+RUN apt-get update && \
+  apt-get install -y --no-install-recommends \
+  tzdata && \
+  apt-get clean && \
+  rm -rf /var/lib/apt/lists/*
+
+# Set timezone
+RUN ln -snf /usr/share/zoneinfo/Europe/Berlin /etc/localtime && echo Europe/Berlin > /etc/timezone
+
 # Update library cache
 RUN ldconfig
 
 # Expose ports
-EXPOSE 8443 8080
+EXPOSE 8443 8080 8181
 
 CMD ["bash"]
 
